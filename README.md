@@ -150,4 +150,5 @@ MIT License - See LICENSE file for details.
 ## Support
 
 - [Guildbase](https://guildbase.gg)
+- [Support Discord](https://discord.gg/ftecbfMrzt)
 - [GitHub Issues](https://github.com/guildbase/guildbase-fivem/issues)
