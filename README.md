@@ -145,7 +145,7 @@ Config.Debug = {
 
 ## License
 
-MIT License - See LICENSE file for details.
+Proprietary - Free to use, no modification or redistribution. See LICENSE file.
 
 ## Support
 
