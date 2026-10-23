@@ -1300,3 +1300,118 @@
 #container.view-simplified .staff-stat-value {
     font-size: 20px;
 }
+
+/* ---- My Applications (/myapps) ------------------------------------
+   The applicant's own view, mirroring the card grid the website shows
+   them under My Applications.
+   ------------------------------------------------------------------ */
+
+.staff-mine {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 2px;
+}
+
+.staff-mine-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.staff-mine-card {
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: var(--card-radius);
+    box-shadow: var(--card-glow);
+    transition: border-color 0.2s;
+}
+
+.staff-mine-card:hover {
+    border-color: var(--n600);
+}
+
+.staff-mine-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.staff-mine-name {
+    font-size: 15px;
+    font-weight: 500;
+    color: #fff;
+    line-height: 1.4;
+}
+
+/* px-2.5 py-1 rounded-full text-xs font-medium, tinted at 10% like the
+   website's applicant cards rather than the reviewer's 20%. */
+.staff-mine-status {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 9999px;
+    font-size: 12px;
+    line-height: 1rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.staff-mine-stage-label {
+    font-size: 12px;
+    line-height: 1rem;
+    color: var(--n500);
+    margin-bottom: 4px;
+}
+
+.staff-mine-stage {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.staff-mine-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 9999px;
+    flex: 0 0 auto;
+}
+
+.staff-mine-stage span {
+    font-size: 14px;
+    color: var(--n300);
+}
+
+.staff-mine-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: auto;
+    padding-top: 16px;
+    border-top: 1px solid rgba(64, 64, 64, 0.5);
+    font-size: 12px;
+    line-height: 1rem;
+    color: var(--n500);
+}
+
+.staff-mine-date {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#container.view-simplified .staff-mine-grid {
+    grid-template-columns: 1fr;
+}
+
+#container.view-simplified .staff-mine-card {
+    padding: 16px;
+}

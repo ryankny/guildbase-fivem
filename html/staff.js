@@ -34,7 +34,8 @@
     var views = {
         picker: document.getElementById('view-picker'),
         list: document.getElementById('view-list'),
-        detail: document.getElementById('view-detail')
+        detail: document.getElementById('view-detail'),
+        mine: document.getElementById('view-mine')
     };
 
     var modal = {
@@ -61,6 +62,7 @@
         trash: svg('M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16'),
         scan: svg('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'),
         chevron: svg('M9 5l7 7-7 7'),
+        calendar: svg('M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z', 14),
         search: svg('M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z'),
         doc: svg('M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z'),
         chat: svg('M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.9 9.9 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z'),
@@ -93,6 +95,19 @@
     };
 
     var FINAL_STATUSES = ['accepted', 'rejected', 'withdrawn'];
+
+    // The applicant-facing labels, which differ from the reviewer's in one
+    // place: a pushed-back application is "Needs Revision" to the person who
+    // has to act on it.
+    var APPLICANT_STATUS = {
+        draft: { label: 'Draft', color: '#a3a3a3' },
+        submitted: { label: 'Submitted', color: '#60a5fa' },
+        in_review: { label: 'In Review', color: '#fbbf24' },
+        pushed_back: { label: 'Needs Revision', color: '#fb923c' },
+        accepted: { label: 'Accepted', color: '#4ade80' },
+        rejected: { label: 'Rejected', color: '#f87171' },
+        withdrawn: { label: 'Withdrawn', color: '#a3a3a3' }
+    };
 
     var STATUS_FILTERS = [
         { value: '', label: 'All Statuses' },
@@ -151,6 +166,8 @@
         detail: null,
         tab: 'responses',
         view: 'picker',
+        mode: 'staff',
+        mine: [],
         toastTimer: null
     };
 
@@ -307,7 +324,11 @@
             views[key].classList.toggle('hidden', key !== view);
         });
 
-        var canGoBack = (view === 'detail') || (view === 'list' && state.guilds.length > 1);
+        // In the applicant panel the arrow is the way out, so it is always
+        // there; for staff it only appears where there is somewhere to go back to.
+        var canGoBack = state.mode === 'applicant'
+            || view === 'detail'
+            || (view === 'list' && state.guilds.length > 1);
 
         backBtn.classList.toggle('hidden', !canGoBack);
     }
@@ -1130,6 +1151,7 @@
 
     function openPanel(message) {
         state.open = true;
+        state.mode = 'staff';
         state.guilds = message.guilds || [];
         state.detail = null;
         state.applications = [];
@@ -1159,6 +1181,8 @@
         state.guild = null;
         state.guildIndex = null;
         state.detail = null;
+        state.mine = [];
+        state.mode = 'staff';
 
         closeModal();
         busy(false);
@@ -1171,6 +1195,12 @@
     }
 
     function goBack() {
+        if (state.mode === 'applicant') {
+            closePanel(true);
+
+            return;
+        }
+
         if (state.view === 'detail') {
             state.detail = null;
             state.tab = 'responses';
@@ -1209,6 +1239,141 @@
         goBack();
     }, true);
 
+    // ---- My Applications (/myapps) -------------------------------
+
+    function openMine(message) {
+        state.open = true;
+        state.mode = 'applicant';
+        state.mine = message.applications || [];
+        state.guilds = [];
+        state.guildIndex = null;
+        state.detail = null;
+
+        applyViewType(message.viewType, message.simplifiedSize);
+
+        container.classList.remove('hidden');
+        container.classList.add('mode-staff');
+        root.classList.remove('hidden');
+        busy(false);
+        closeModal();
+
+        renderMine();
+    }
+
+    function renderMine() {
+        titleEl.textContent = 'My Applications';
+        titlePillEl.innerHTML = '';
+        subtitleEl.textContent = state.mine.length
+            ? 'Everything you have submitted, and where it has got to'
+            : '';
+        headActions.innerHTML = '';
+
+        if (!state.mine.length) {
+            views.mine.innerHTML = '<div class="staff-card"><div class="staff-empty">' + ICON.doc
+                + '<h3>No applications yet</h3>'
+                + '<p>Anything you submit here will show up on this screen.</p></div></div>';
+
+            show('mine');
+
+            return;
+        }
+
+        var html = '<div class="staff-mine"><div class="staff-mine-grid">';
+
+        state.mine.forEach(function (application) {
+            var status = APPLICANT_STATUS[application.status]
+                || { label: application.status || 'Unknown', color: '#a3a3a3' };
+            var submitted = shortDate(application.submitted_at);
+
+            html += '<div class="staff-mine-card">'
+                + '<div class="staff-mine-head">'
+                + '<h3 class="staff-mine-name">' + esc(application.template || 'Application') + '</h3>'
+                + '<span class="staff-mine-status" style="background-color:' + esc(status.color)
+                + '1a;color:' + esc(status.color) + '">' + esc(status.label) + '</span>'
+                + '</div>';
+
+            if (application.stage) {
+                html += '<p class="staff-mine-stage-label">Current Stage</p>'
+                    + '<div class="staff-mine-stage">'
+                    + '<span class="staff-mine-dot" style="background-color:'
+                    + esc(application.stage.color || '#a855f7') + '"></span>'
+                    + '<span>' + esc(application.stage.name) + '</span></div>';
+            }
+
+            html += '<div class="staff-mine-foot">'
+                + '<span class="staff-mine-date">' + ICON.calendar
+                + esc(submitted || 'Not submitted') + '</span>'
+                + (application.can_withdraw
+                    ? '<button class="staff-btn staff-btn-reject staff-btn-sm" type="button"'
+                        + ' data-withdraw="' + esc(application.id) + '">' + ICON.cross
+                        + '<span>Withdraw</span></button>'
+                    : '<span>' + esc(relative(application.submitted_at)) + '</span>')
+                + '</div></div>';
+        });
+
+        views.mine.innerHTML = html + '</div></div>';
+
+        views.mine.querySelectorAll('[data-withdraw]').forEach(function (node) {
+            node.addEventListener('click', function () {
+                promptWithdraw(node.getAttribute('data-withdraw'));
+            });
+        });
+
+        show('mine');
+    }
+
+    function promptWithdraw(applicationId) {
+        var application = null;
+
+        state.mine.forEach(function (candidate) {
+            if (candidate.id === applicationId) application = candidate;
+        });
+
+        if (!application) return;
+
+        openModal({
+            title: 'Withdraw Application',
+            note: 'Your ' + (application.template || 'application')
+                + ' will be withdrawn and the team will stop reviewing it. '
+                + 'You cannot undo this, though you can apply again if the guild allows it.',
+            fields: field('Reason (optional)', textarea('modal-reason',
+                'Anything you would like the team to know?')),
+            confirmLabel: 'Withdraw',
+            confirmClass: 'staff-btn-reject',
+            onConfirm: function () {
+                var reason = value('modal-reason');
+
+                busy(true);
+                post('mineWithdraw', {
+                    applicationId: applicationId,
+                    reason: reason || null
+                });
+
+                return true;
+            }
+        });
+    }
+
+    function handleWithdrawResult(payload) {
+        if (!payload.success) {
+            return toast(payload.message || 'That did not work.', 'error');
+        }
+
+        toast(payload.message || 'Your application has been withdrawn.', 'success');
+
+        // Reflect it immediately rather than asking the server again: the one
+        // thing that changed is this card.
+        state.mine.forEach(function (application) {
+            if (application.id === payload.applicationId) {
+                application.status = 'withdrawn';
+                application.can_withdraw = false;
+                application.is_final = true;
+            }
+        });
+
+        renderMine();
+    }
+
     // ---- messages from the client --------------------------------
 
     window.addEventListener('message', function (event) {
@@ -1245,6 +1410,15 @@
             case 'staffActionResult':
                 busy(false);
                 handleActionResult(data.payload || {});
+                break;
+
+            case 'mineOpen':
+                openMine(data);
+                break;
+
+            case 'mineWithdrawn':
+                busy(false);
+                handleWithdrawResult(data.payload || {});
                 break;
 
             case 'staffError':

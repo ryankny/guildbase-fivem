@@ -14,7 +14,8 @@ local function DebugLog(category, message, ...)
         npc = Config.Debug.logNPCSpawning,
         target = Config.Debug.logTargetSetup,
         session = Config.Debug.logSessionCreation,
-        staff = Config.Debug.logStaffPanel
+        staff = Config.Debug.logStaffPanel,
+        phone = Config.Debug.logPhoneMail
     }
 
     if categoryEnabled[category] == false then return end
@@ -235,7 +236,10 @@ local function CloseStaffNUI()
 
     SendNUIMessage({ action = 'staffClose' })
 
+    -- The panel serves both /apps and /myapps, so closing it drops whichever
+    -- session the player had open.
     TriggerServerEvent('guildbase:staff:close')
+    TriggerServerEvent('guildbase:mine:close')
 
     CreateThread(function()
         Wait(100)
@@ -313,6 +317,72 @@ CreateThread(function()
     end, false)
 
     TriggerEvent('chat:addSuggestion', '/' .. command, Config.StaffPanel.suggestion or 'Review Guildbase applications')
+end)
+
+-- ==================================================================
+-- My Applications (/myapps)
+--
+-- The applicant's own view of what they have submitted, and a way to
+-- withdraw one that has not been decided. Shares the panel the staff command
+-- uses, so it inherits Config.ViewType and the same styling.
+-- ==================================================================
+
+local function OpenMineNUI(applications)
+    if isNUIOpen or isStaffOpen then return end
+
+    isStaffOpen = true
+    SetNuiFocus(true, true)
+    SetNuiFocusKeepInput(false)
+
+    CreateTablet()
+
+    SendNUIMessage({
+        action = 'mineOpen',
+        applications = applications,
+        viewType = Config.ViewType or 'tablet',
+        simplifiedSize = Config.SimplifiedSize
+    })
+end
+
+RegisterNetEvent('guildbase:mine:opened', function(applications)
+    DebugLog('staff', 'My applications opened (%d)', applications and #applications or 0)
+
+    OpenMineNUI(applications or {})
+end)
+
+RegisterNetEvent('guildbase:mine:withdrawn', function(payload)
+    SendNUIMessage({ action = 'mineWithdrawn', payload = payload })
+end)
+
+RegisterNetEvent('guildbase:mine:error', function(message)
+    message = message or Config.Messages.mine_error
+
+    if isStaffOpen then
+        SendNUIMessage({ action = 'staffError', message = message })
+    else
+        Notify(message, 'error')
+    end
+end)
+
+RegisterNUICallback('mineWithdraw', function(data, cb)
+    TriggerServerEvent('guildbase:mine:withdraw', data.applicationId, data.reason)
+    cb('ok')
+end)
+
+CreateThread(function()
+    if not Config.MyApplications or not Config.MyApplications.enabled then return end
+
+    local command = Config.MyApplications.command or 'myapps'
+
+    RegisterCommand(command, function()
+        if isNUIOpen or isStaffOpen then return end
+
+        Notify(Config.Messages.mine_loading, 'info')
+        TriggerServerEvent('guildbase:mine:open')
+    end, false)
+
+    TriggerEvent('chat:addSuggestion', '/' .. command,
+        Config.MyApplications.suggestion or 'View or withdraw your applications')
 end)
 
 -- Spawn NPC

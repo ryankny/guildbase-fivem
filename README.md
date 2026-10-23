@@ -6,6 +6,8 @@ A standalone FiveM resource for integrating Guildbase applications directly into
 
 - **NPC Interaction** - Configure NPCs at any location to handle applications
 - **Staff Review Panel** - `/apps` lets your staff read and action applications in-game
+- **My Applications** - `/myapps` lets a player check and withdraw their own
+- **Phone Mail** - LB Phone notifications on submission and on a decision
 - **Two UI Styles** - A full tablet, or a condensed panel with no frame around it
 - **Target System Support** - Works with ox_target, qb-target, or classic E-key interaction
 - **Tablet Animation** - Players hold a tablet while viewing applications
@@ -192,6 +194,72 @@ Config.StaffPanel = {
 
 AI detection also requires Pro.
 
+## My Applications (`/myapps`)
+
+Opens the player's own view: every application they have submitted to your
+guild, what stage it is at, and a **Withdraw** button on any that have not been
+decided yet.
+
+Withdrawing follows the same rule as the website — only while the application
+is `submitted` or `in_review`. Once a staff member has accepted or rejected it,
+the button is gone. The withdrawal is recorded on the application's timeline
+with the player's reason, so a reviewer opening it sees who pulled it and why.
+
+```lua
+Config.MyApplications = {
+    enabled = true,
+    command = 'myapps',
+    suggestion = 'View or withdraw your applications'
+}
+```
+
+Nothing extra to configure: it uses the API keys you have already set up.
+
+## Phone Mail
+
+Application notifications are delivered to the player's in-game phone:
+
+- **On submission** — a confirmation that their application arrived
+- **On a decision** — the workflow stage's email, exactly as the guild wrote it
+  in Guildbase, with `{applicant_name}`, `{guild_name}`, `{stage_name}` and the
+  rest filled in
+
+The stage notification follows the same switch as the website's email: tick
+**Notify by email** on a workflow stage and its subject and message are used
+for the phone too, so the two can never say different things.
+
+### Supported phones
+
+LB Phone, detected automatically.
+
+```lua
+Config.Phone = {
+    enabled = true,
+    system = 'auto',     -- 'auto' | 'lb-phone' | 'none'
+    pollInterval = 30,   -- seconds between checks
+    sender = nil         -- defaults to the guild's name
+}
+```
+
+`'auto'` uses LB Phone when the resource is running and does nothing otherwise,
+so you can leave it on with no phone installed. Detection does not depend on
+resource start order.
+
+### How it works
+
+A game server cannot be called from the outside, so nothing is pushed to you.
+Every `pollInterval` seconds the script works out which players online have a
+phone with a mail account, asks Guildbase whether it has anything for them, and
+hands over whatever comes back. Nothing is requested at all while nobody online
+is carrying a phone.
+
+Guildbase holds an undelivered notification for 24 hours, so a player who gets
+a decision while offline still receives it when they next log in. Each one is
+handed over exactly once.
+
+A player without a phone, or with a phone that has no mail account, is simply
+skipped — they still get the Guildbase email and Discord DM as usual.
+
 ## Debug Mode
 
 Enable debug logging in `config.lua`:
@@ -236,6 +304,15 @@ Config.Debug = {
 **Buttons missing from the staff panel**
 - The panel only offers what the staff member's Guildbase role allows; check
   their role under **Guild Settings → Roles**
+
+**No phone mail arriving**
+- Check the console on start: it prints whether a phone was detected
+- The player needs a phone on them with a mail account set up
+- For decisions, the workflow stage needs **Notify by email** ticked in Guildbase
+- Enable `Config.Debug.enabled` and `logPhoneMail` to see each poll and delivery
+
+**Withdraw button missing from /myapps**
+- An application can only be withdrawn while it is still submitted or in review
 
 ## License
 

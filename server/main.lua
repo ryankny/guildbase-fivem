@@ -7,7 +7,8 @@ local function DebugLog(category, message, ...)
         api_response = Config.Debug.logAPIResponses,
         session = Config.Debug.logSessionCreation,
         discord = Config.Debug.logSessionCreation,
-        staff = Config.Debug.logStaffPanel
+        staff = Config.Debug.logStaffPanel,
+        phone = Config.Debug.logPhoneMail
     }
 
     if categoryEnabled[category] == false then return end
@@ -218,6 +219,11 @@ end)
 -- [source] = { discordId = '...', guilds = { { key = '...', data = {...} } } }
 local staffSessions = {}
 
+-- [source] = { discordId = '...', keys = { [applicationId] = 'gb_live_...' } }
+-- Filled by /myapps further down; declared here so the shared playerDropped
+-- handler below can clear it.
+local mineSessions = {}
+
 -- [source] = GetGameTimer() value at the player's last request
 local staffCooldowns = {}
 
@@ -278,35 +284,48 @@ local function GuildbaseRequest(apiKey, method, path, body, callback)
     })
 end
 
--- The keys to ask about a staff member, in a stable order.
-local function GetStaffKeys()
+-- Collect configured keys into a deduplicated list, skipping placeholders.
+local function CollectKeys(sources)
     local keys, seen = {}, {}
 
-    local function add(key)
-        if type(key) ~= 'string' or key == '' or key == 'gb_live_YOUR_API_KEY' or seen[key] then
-            return
-        end
-
-        seen[key] = true
-        keys[#keys + 1] = key
-    end
-
-    if type(ServerConfig.StaffKeys) == 'table' then
-        for _, key in ipairs(ServerConfig.StaffKeys) do
-            add(key)
+    for _, source in ipairs(sources) do
+        if type(source) == 'table' then
+            for _, key in pairs(source) do
+                if type(key) == 'string' and key ~= '' and key ~= 'gb_live_YOUR_API_KEY' and not seen[key] then
+                    seen[key] = true
+                    keys[#keys + 1] = key
+                end
+            end
         end
     end
 
-    -- Nothing configured for the panel: fall back to the NPC keys, which are
-    -- for the same guilds. The 'staff:review' scope is still required, so a
-    -- submission-only key just answers 403 and is skipped.
-    if #keys == 0 and type(ServerConfig.APIKeys) == 'table' then
-        for _, key in pairs(ServerConfig.APIKeys) do
-            add(key)
-        end
-    end
+    table.sort(keys)
 
     return keys
+end
+
+-- The keys to ask about a staff member.
+--
+-- Falls back to the NPC keys when nothing is configured for the panel, since
+-- they are for the same guilds. The 'staff:review' scope is still required,
+-- so a submission-only key simply answers 403 and is skipped.
+local function GetStaffKeys()
+    local keys = CollectKeys({ ServerConfig.StaffKeys })
+
+    if #keys > 0 then
+        return keys
+    end
+
+    return CollectKeys({ ServerConfig.APIKeys })
+end
+
+-- Every guild this server is configured for, for the endpoints that are about
+-- the applicant rather than a reviewer. Both lists are used rather than one
+-- falling back to the other: a server can perfectly well run NPCs for one
+-- guild and a staff panel for another, and a player's own mail and
+-- applications should come from all of them.
+local function GetApplicantKeys()
+    return CollectKeys({ ServerConfig.StaffKeys, ServerConfig.APIKeys })
 end
 
 local function StaffError(source, message)
@@ -624,7 +643,346 @@ end)
 
 AddEventHandler('playerDropped', function()
     staffSessions[source] = nil
+    mineSessions[source] = nil
     staffCooldowns[source] = nil
+end)
+
+-- ==================================================================
+-- In-Game Phone Mail
+--
+-- A game server cannot be called from the outside, so Guildbase queues the
+-- notifications and this asks for them. Every pollInterval seconds we work
+-- out which players online have a phone with a mail address, ask each
+-- configured guild whether it has anything for them, and hand whatever comes
+-- back to the phone.
+--
+-- Guildbase marks a notice delivered the moment it hands it over, so it is
+-- offered exactly once. Nothing here retries a failed SendMail: a phone
+-- message that arrives twice is worse than one that does not arrive.
+-- ==================================================================
+
+local phoneSystem = nil
+
+-- Which phone resource to talk to.
+--
+-- A positive detection is remembered; a negative one is not. Resource start
+-- order is not ours to control, and a server that happens to start this
+-- before lb-phone would otherwise decide once, early, that there is no phone
+-- on the server and never look again.
+local function DetectPhoneSystem()
+    if phoneSystem then
+        return phoneSystem
+    end
+
+    if not Config.Phone or not Config.Phone.enabled then
+        return 'none'
+    end
+
+    local configured = Config.Phone.system or 'auto'
+
+    if configured == 'none' then
+        return 'none'
+    end
+
+    if configured ~= 'auto' then
+        phoneSystem = configured
+        DebugLog('phone', 'Phone system: %s (configured)', phoneSystem)
+
+        return phoneSystem
+    end
+
+    if GetResourceState('lb-phone') == 'started' then
+        phoneSystem = 'lb-phone'
+        DebugLog('phone', 'Phone system auto-detected: lb-phone')
+
+        return phoneSystem
+    end
+
+    return 'none'
+end
+
+-- The mail address of the phone this player is carrying, if they have one.
+--
+-- LB Phone addresses mail to an email address rather than to a player, so
+-- this is two lookups: the number of the phone they have equipped, then the
+-- address of the mail account on it. Either can be absent -- no phone in
+-- their pocket, or a phone with no mail account set up -- and that is a
+-- normal state, not an error.
+local function GetPlayerMailAddress(source)
+    if DetectPhoneSystem() ~= 'lb-phone' then
+        return nil
+    end
+
+    local ok, address = pcall(function()
+        local number = exports['lb-phone']:GetEquippedPhoneNumber(source)
+
+        if not number then
+            return nil
+        end
+
+        return exports['lb-phone']:GetEmailAddress(number)
+    end)
+
+    if not ok then
+        DebugLog('phone', 'lb-phone lookup failed for %s', GetPlayerName(source) or source)
+        return nil
+    end
+
+    return address
+end
+
+local function SendPhoneMail(address, sender, subject, message)
+    if DetectPhoneSystem() ~= 'lb-phone' then
+        return false
+    end
+
+    local ok, success = pcall(function()
+        return exports['lb-phone']:SendMail({
+            to = address,
+            sender = sender,
+            subject = subject,
+            message = message
+        })
+    end)
+
+    return ok and success == true
+end
+
+-- Discord id -> mail address, for everyone online who can receive mail.
+local function CollectPhoneRecipients()
+    local recipients = {}
+    local count = 0
+
+    for _, playerId in ipairs(GetPlayers()) do
+        local source = tonumber(playerId)
+
+        if source then
+            local address = GetPlayerMailAddress(source)
+
+            if address then
+                local discordId = GetPlayerDiscordId(source)
+
+                if discordId then
+                    recipients[discordId] = address
+                    count = count + 1
+                end
+            end
+        end
+    end
+
+    return recipients, count
+end
+
+local function DeliverPhoneMail()
+    if DetectPhoneSystem() == 'none' then
+        return
+    end
+
+    local keys = GetApplicantKeys()
+
+    if #keys == 0 then
+        return
+    end
+
+    local recipients, count = CollectPhoneRecipients()
+
+    -- Nobody online is carrying a phone, so there is nothing worth asking.
+    if count == 0 then
+        return
+    end
+
+    local discordIds = {}
+
+    for discordId in pairs(recipients) do
+        discordIds[#discordIds + 1] = discordId
+    end
+
+    for _, key in ipairs(keys) do
+        GuildbaseRequest(key, 'POST', '/api/v1/ingame/mail', { discord_ids = discordIds }, function(status, data)
+            if status ~= 200 or not data or not data.success or not data.data then
+                if status and status ~= 404 then
+                    DebugLog('phone', 'Mail poll failed with status %s', tostring(status))
+                end
+
+                return
+            end
+
+            local sender = (Config.Phone and Config.Phone.sender) or data.data.sender or 'Guildbase'
+
+            for _, item in ipairs(data.data.mail or {}) do
+                local address = recipients[item.discord_id]
+
+                -- They may have logged off between the poll and the reply.
+                if address then
+                    local delivered = SendPhoneMail(address, sender, item.subject, item.message)
+
+                    DebugLog('phone', 'Mail %s to %s: %s', tostring(item.id),
+                        RedactString(item.discord_id, 6), delivered and 'delivered' or 'failed')
+                end
+            end
+        end)
+    end
+end
+
+CreateThread(function()
+    if not Config.Phone or not Config.Phone.enabled then
+        return
+    end
+
+    -- Let the phone resource finish starting before the first look.
+    Wait(10000)
+
+    if DetectPhoneSystem() == 'none' then
+        print('^3[Guildbase]^7 Phone mail is enabled but no supported phone was detected')
+    else
+        print('^2[Guildbase]^7 Phone mail enabled: ' .. DetectPhoneSystem())
+    end
+
+    local interval = math.max(10, (Config.Phone.pollInterval or 30)) * 1000
+
+    while true do
+        local ok, err = pcall(DeliverPhoneMail)
+
+        if not ok then
+            DebugLog('phone', 'Mail delivery errored: %s', tostring(err))
+        end
+
+        Wait(interval)
+    end
+end)
+
+-- ==================================================================
+-- My Applications (/myapps)
+--
+-- The applicant's own view: what they have submitted and, while it is still
+-- being looked at, a way to withdraw it. Everything is scoped to their own
+-- Discord id, which is read from their identifiers here and never taken from
+-- the client.
+-- ==================================================================
+
+RegisterNetEvent('guildbase:mine:open', function()
+    local src = source
+
+    if not Config.MyApplications or not Config.MyApplications.enabled then
+        return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.mine_disabled)
+    end
+
+    if OnCooldown(src) then
+        return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.staff_cooldown)
+    end
+
+    local discordId = GetPlayerDiscordId(src)
+
+    if not discordId then
+        return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.no_discord)
+    end
+
+    local keys = GetApplicantKeys()
+
+    if #keys == 0 then
+        return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.staff_not_configured)
+    end
+
+    -- A player may have applied to more than one of the guilds this server is
+    -- configured for, so every key is asked and the answers merged. Which key
+    -- answered for which application is kept here, not sent to the client:
+    -- withdraw has to go back to the guild that owns it.
+    local pending = #keys
+    local applications = {}
+    local ownerKeys = {}
+    local reachable = false
+
+    for _, key in ipairs(keys) do
+        local path = '/api/v1/ingame/applications?discord_id=' .. UrlEncode(discordId)
+
+        GuildbaseRequest(key, 'GET', path, nil, function(status, data)
+            if status == 200 and data and data.success and data.data then
+                reachable = true
+
+                for _, application in ipairs(data.data.applications or {}) do
+                    if type(application.id) == 'string' then
+                        ownerKeys[application.id] = key
+                        applications[#applications + 1] = application
+                    end
+                end
+            elseif status == 401 or status == 403 then
+                reachable = true
+            end
+
+            pending = pending - 1
+
+            if pending > 0 then
+                return
+            end
+
+            if not reachable then
+                mineSessions[src] = nil
+
+                return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.mine_error)
+            end
+
+            mineSessions[src] = { discordId = discordId, keys = ownerKeys }
+
+            -- Newest first, the way the website lists them.
+            table.sort(applications, function(a, b)
+                return (a.submitted_at or '') > (b.submitted_at or '')
+            end)
+
+            DebugLog('staff', '%s opened /myapps (%d application(s))', GetPlayerName(src), #applications)
+
+            TriggerClientEvent('guildbase:mine:opened', src, applications)
+        end)
+    end
+end)
+
+RegisterNetEvent('guildbase:mine:withdraw', function(applicationId, reason)
+    local src = source
+
+    if not Config.MyApplications or not Config.MyApplications.enabled then
+        return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.mine_disabled)
+    end
+
+    if OnCooldown(src) then
+        return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.staff_cooldown)
+    end
+
+    local session = mineSessions[src]
+
+    -- Only an application this player was just shown, and only through the
+    -- key that returned it. Guildbase checks ownership again on its side.
+    local key = session and ValidApplicationId(applicationId) and session.keys[applicationId] or nil
+
+    if not key then
+        return TriggerClientEvent('guildbase:mine:error', src, Config.Messages.mine_error)
+    end
+
+    local body = { discord_id = session.discordId }
+
+    if type(reason) == 'string' and reason ~= '' then
+        body.reason = string.sub(reason, 1, 1000)
+    end
+
+    local path = '/api/v1/ingame/applications/' .. applicationId .. '/withdraw'
+
+    GuildbaseRequest(key, 'POST', path, body, function(status, data)
+        local succeeded = status == 200 and data and data.success == true
+
+        if succeeded then
+            DebugLog('staff', '%s withdrew application %s', GetPlayerName(src), applicationId)
+        end
+
+        TriggerClientEvent('guildbase:mine:withdrawn', src, {
+            applicationId = applicationId,
+            success = succeeded,
+            message = succeeded
+                and StaffMessage(data.data, 'Your application has been withdrawn.')
+                or StaffMessage(data, Config.Messages.mine_error)
+        })
+    end)
+end)
+
+RegisterNetEvent('guildbase:mine:close', function()
+    mineSessions[source] = nil
 end)
 
 -- Resource start message
@@ -644,4 +1002,5 @@ AddEventHandler('onResourceStart', function(resourceName)
             print('^3[Guildbase]^7 Staff panel enabled but no API keys are configured for it')
         end
     end
+
 end)
