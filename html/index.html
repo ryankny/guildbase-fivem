@@ -4,7 +4,14 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guildbase</title>
+    <!-- Lexend is the Guildbase dashboard's typeface. Loaded from the same
+         place the website loads it; the stack below covers a server whose
+         players cannot reach Google Fonts. -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="staff.css">
 </head>
 <body>
     <div id="container" class="hidden">
@@ -31,6 +38,58 @@
                     </div>
 
                     <iframe id="guildbase-frame" src="" frameborder="0" referrerpolicy="no-referrer-when-downgrade" allow="clipboard-write; clipboard-read"></iframe>
+
+                    <!-- Staff review panel (/apps). Shares the tablet screen so
+                         Config.ViewType applies to it unchanged. The markup
+                         and styling mirror the Applications screens in the
+                         Guildbase dashboard. -->
+                    <div id="staff" class="hidden">
+                        <div class="staff-shell">
+                            <header class="staff-head">
+                                <div class="staff-head-left">
+                                    <button id="staff-back" class="staff-iconbtn hidden" type="button" aria-label="Back"></button>
+                                    <div class="staff-head-text">
+                                        <div class="staff-head-title">
+                                            <h1 id="staff-title">Applications</h1>
+                                            <span id="staff-title-pill"></span>
+                                        </div>
+                                        <p id="staff-subtitle"></p>
+                                    </div>
+                                </div>
+                                <div id="staff-head-actions" class="staff-head-actions"></div>
+                            </header>
+
+                            <div class="staff-body">
+                                <section id="view-picker" class="staff-view"></section>
+                                <section id="view-list" class="staff-view hidden"></section>
+                                <section id="view-detail" class="staff-view hidden"></section>
+                            </div>
+                        </div>
+
+                        <div id="staff-loading" class="staff-loading hidden">
+                            <div class="staff-spinner"></div>
+                        </div>
+
+                        <div id="staff-toast" class="staff-toast hidden"></div>
+
+                        <div id="staff-modal" class="staff-modal hidden">
+                            <div class="staff-modal-card">
+                                <div class="staff-modal-header">
+                                    <h3 id="staff-modal-title"></h3>
+                                    <button id="staff-modal-close" class="staff-modal-close" type="button" aria-label="Close"></button>
+                                </div>
+                                <div class="staff-modal-body">
+                                    <p id="staff-modal-note"></p>
+                                    <div id="staff-modal-fields"></div>
+                                    <div id="staff-modal-error" class="hidden"></div>
+                                </div>
+                                <div class="staff-modal-footer">
+                                    <button id="staff-modal-cancel" class="staff-btn staff-btn-secondary" type="button">Cancel</button>
+                                    <button id="staff-modal-confirm" class="staff-btn staff-btn-primary" type="button">Confirm</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <div class="tablet-bezel-bottom">
@@ -44,5 +103,6 @@
         </div>
     </div>
     <script src="script.js"></script>
+    <script src="staff.js"></script>
 </body>
 </html>
