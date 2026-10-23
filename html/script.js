@@ -9,6 +9,32 @@
     let expectedUrl = null;
     const baseUrl = 'https://guildbase.gg';
 
+    // Switch the container between the tablet device and the condensed panel.
+    // 'simplified' drops the frame, bezels and spacing (see style.css) and
+    // takes its size from Config.SimplifiedSize.
+    //
+    // Shared with the staff panel via window.GuildbaseView below, so the two
+    // cannot drift apart.
+    function applyViewType(viewType, size) {
+        var simplified = viewType === 'simplified';
+
+        container.classList.toggle('view-simplified', simplified);
+
+        if (simplified && size) {
+            if (size.width) {
+                container.style.setProperty('--panel-w', size.width + 'px');
+            }
+            if (size.height) {
+                container.style.setProperty('--panel-h', size.height + 'px');
+            }
+        } else {
+            container.style.removeProperty('--panel-w');
+            container.style.removeProperty('--panel-h');
+        }
+    }
+
+    window.GuildbaseView = { apply: applyViewType };
+
     // Fetch URL and inject into iframe via srcdoc
     function loadUrlIntoFrame(url) {
         fetch(url)
@@ -128,7 +154,7 @@
 
         switch (data.action) {
             case 'open':
-                openFrame(data.url);
+                openFrame(data.url, data.viewType, data.simplifiedSize);
                 break;
 
             case 'close':
@@ -138,10 +164,13 @@
     });
 
     // Open the iframe with the given URL
-    function openFrame(url) {
+    function openFrame(url, viewType, simplifiedSize) {
         if (isOpen) return;
         isOpen = true;
         expectedUrl = url;
+
+        applyViewType(viewType, simplifiedSize);
+        container.classList.remove('mode-staff');
 
         loading.classList.add('hidden');
         frame.classList.add('loaded');

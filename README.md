@@ -5,6 +5,8 @@ A standalone FiveM resource for integrating Guildbase applications directly into
 ## Features
 
 - **NPC Interaction** - Configure NPCs at any location to handle applications
+- **Staff Review Panel** - `/apps` lets your staff read and action applications in-game
+- **Two UI Styles** - A full tablet, or a condensed panel with no frame around it
 - **Target System Support** - Works with ox_target, qb-target, or classic E-key interaction
 - **Tablet Animation** - Players hold a tablet while viewing applications
 - **Discord Integration** - Automatically links applications to player Discord accounts
@@ -93,6 +95,27 @@ Add an optional `blip` table to any NPC to display a map marker:
 | `label` | string | Map marker text |
 | `shortRange` | boolean | If true, only visible when player is nearby |
 
+### View Type
+
+How the UI is drawn on screen, for both the application NPCs and the `/apps`
+panel.
+
+```lua
+-- 'tablet'     - full tablet: device frame, bezels, buttons and shadow
+-- 'simplified' - condensed panel: just the form and the close notice
+Config.ViewType = 'tablet'
+
+-- Only used by 'simplified'. Pixels, capped to the player's screen.
+Config.SimplifiedSize = {
+    width = 620,
+    height = 720
+}
+```
+
+`Config.ViewType` only changes what is drawn. The tablet prop the player holds
+is separate — set `Config.UseTablet = false` if you want empty hands in
+simplified view.
+
 ### Target System
 
 ```lua
@@ -106,6 +129,68 @@ Config.TargetSystem = 'auto'
 -- Options: 'fivem', 'esx', 'qbcore', 'custom'
 Config.DiscordSource = 'fivem'
 ```
+
+## Staff Panel (`/apps`)
+
+`/apps` opens a review panel for your Guildbase staff. From it they can list
+applications, read the answers, claim one, approve, reject, move it between
+stages, advance it, push it back for revisions, overturn a decision, run AI
+detection and delete — the same actions as the reviewer dashboard.
+
+Every action is carried out **as the staff member who ran the command**. Their
+Discord id is read server-side from their own identifiers, and Guildbase checks
+it against their guild role, so:
+
+- Someone who cannot reject on the website cannot reject from a game server.
+- Templates their role has no access to do not appear in the list.
+- The application timeline names the person, not the integration.
+- Buttons their role does not allow are not shown at all.
+
+A staff member with access to more than one guild is asked which one they want
+first; with access to one, `/apps` opens straight into it.
+
+### Setup
+
+1. In your Guildbase dashboard, go to **Guild Settings → API Keys**
+2. Create a key (or edit an existing one) and tick the **`staff:review`** scope
+   — it is not granted by default
+3. Add the key to `ServerConfig.StaffKeys` in `server/config.lua`
+
+```lua
+-- server/config.lua
+ServerConfig.StaffKeys = {
+    'gb_live_YOUR_API_KEY',            -- one key per guild
+    'gb_live_SECOND_GUILD_API_KEY',
+}
+```
+
+Leave the table empty to reuse the keys from `ServerConfig.APIKeys`. Keys never
+leave the server: the client is only ever told which guilds it may ask about.
+
+### Configuration
+
+```lua
+Config.StaffPanel = {
+    enabled = true,
+    command = 'apps',
+    suggestion = 'Review Guildbase applications',
+    perPage = 15,
+    cooldown = 1   -- seconds between requests per player
+}
+```
+
+### Which permission each action needs
+
+| Action | Guildbase permission |
+|--------|----------------------|
+| List and open applications, run an AI check | `applications.view` |
+| Move between stages, advance | `applications.manage` |
+| Approve, reject, push back | `applications.review` |
+| Overturn a final decision | `applications.overturn` |
+| Delete permanently | `applications.delete` |
+| Claim and unclaim | `applications.review` or `applications.manage` |
+
+AI detection also requires Pro.
 
 ## Debug Mode
 
@@ -142,6 +227,15 @@ Config.Debug = {
 - Ensure NPC `id` matches the key in `server/config.lua`
 - Check template slug matches Guildbase
 - Ensure Guildbase URL is accessible
+
+**"You do not have access to any Guildbase guild" from /apps**
+- The player's Discord account must be a team member (or the owner) of the guild
+- The API key needs the `staff:review` scope — a submission-only key is skipped
+- Enable `Config.Debug.enabled` and `logStaffPanel` to see what each key answered
+
+**Buttons missing from the staff panel**
+- The panel only offers what the staff member's Guildbase role allows; check
+  their role under **Guild Settings → Roles**
 
 ## License
 

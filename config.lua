@@ -12,6 +12,7 @@ Config.Debug = {
     logSessionCreation = true,
     logNPCSpawning = true,
     logTargetSetup = true,
+    logStaffPanel = true,
     redactSensitiveData = true
 }
 
@@ -53,11 +54,37 @@ Config.InteractionDistance = 2.0 -- meters
 
 --[[
     Tablet Animation
+    The prop the player holds while the UI is open. Independent of
+    Config.ViewType below -- set this to false if you want empty hands.
 ]]
 Config.UseTablet = true
 Config.TabletModel = 'prop_cs_tablet'
 Config.TabletDict = 'amb@world_human_seat_wall_tablet@female@base'
 Config.TabletAnim = 'base'
+
+--[[
+    View Type
+
+    Options:
+      'tablet'     - Full tablet UI: device frame, bezels, buttons and shadow
+      'simplified' - Condensed panel: the application form and the close notice
+                     only, with no tablet frame and none of its spacing
+
+    Applies to both the application NPCs and the /apps staff panel.
+]]
+Config.ViewType = 'tablet'
+
+--[[
+    Simplified View Size
+
+    Only used when Config.ViewType is 'simplified'. Values are in pixels and
+    are capped to the player's screen, so a large number here just means
+    'as big as it fits'.
+]]
+Config.SimplifiedSize = {
+    width = 620,
+    height = 720
+}
 
 --[[
     NPC Configuration
@@ -93,6 +120,32 @@ Config.NPCs = {
 
 
 --[[
+    Staff Panel (/apps)
+
+    An in-game review panel for your Guildbase staff: list applications,
+    read the answers, claim, approve, reject, move stages, advance, push back
+    for revisions, overturn a decision, run AI detection and delete.
+
+    Every action is carried out as the staff member who ran the command and is
+    limited to what their Guildbase guild role allows -- someone who cannot
+    reject on the website cannot reject here either. Staff who have access to
+    more than one guild are asked which one they want first.
+
+    API keys for this live in server/config.lua (ServerConfig.StaffKeys) and
+    each one needs the 'staff:review' scope ticked in Guild Settings.
+]]
+Config.StaffPanel = {
+    enabled = true,
+    command = 'apps',
+    suggestion = 'Review Guildbase applications',
+    perPage = 15,
+
+    -- Seconds a player must wait between requests. Stops a held-down key
+    -- turning into a burst of API calls.
+    cooldown = 1
+}
+
+--[[
     Notification System
     Options: 'native', 'ox_lib', 'esx', 'qbcore'
 ]]
@@ -105,5 +158,12 @@ Config.Messages = {
     no_discord = 'You must have Discord linked to your FiveM account.',
     loading = 'Loading application...',
     error = 'An error occurred. Please try again.',
-    session_error = 'Failed to load application. Please try again.'
+    session_error = 'Failed to load application. Please try again.',
+
+    staff_loading = 'Opening staff panel...',
+    staff_disabled = 'The staff panel is disabled on this server.',
+    staff_not_configured = 'No Guildbase API keys are configured for the staff panel.',
+    staff_no_access = 'You do not have access to any Guildbase guild.',
+    staff_error = 'Could not reach Guildbase. Please try again.',
+    staff_cooldown = 'Slow down a moment.'
 }

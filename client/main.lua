@@ -1,6 +1,7 @@
 local spawnedNPCs = {}
 local targetSystem = nil
 local isNUIOpen = false
+local isStaffOpen = false
 local tabletObject = nil
 local currentNPC = nil
 
@@ -12,7 +13,8 @@ local function DebugLog(category, message, ...)
         interaction = Config.Debug.logInteractions,
         npc = Config.Debug.logNPCSpawning,
         target = Config.Debug.logTargetSetup,
-        session = Config.Debug.logSessionCreation
+        session = Config.Debug.logSessionCreation,
+        staff = Config.Debug.logStaffPanel
     }
 
     if categoryEnabled[category] == false then return end
@@ -119,7 +121,9 @@ local function OpenNUI(embedUrl)
 
     SendNUIMessage({
         action = 'open',
-        url = embedUrl
+        url = embedUrl,
+        viewType = Config.ViewType or 'tablet',
+        simplifiedSize = Config.SimplifiedSize
     })
 end
 
@@ -192,6 +196,123 @@ RegisterNetEvent('guildbase:sessionError', function(message)
     DebugLog('session', 'Session error: %s', message or 'Unknown')
     Notify(message or Config.Messages.session_error, 'error')
     currentNPC = nil
+end)
+
+-- ==================================================================
+-- Staff Panel (/apps)
+--
+-- The panel is drawn in the NUI from data the server fetches: the client
+-- holds no API key and asks for nothing it was not offered. Guilds are
+-- referred to by the index the server handed out.
+-- ==================================================================
+
+local function OpenStaffNUI(guilds)
+    if isNUIOpen or isStaffOpen then return end
+
+    isStaffOpen = true
+    SetNuiFocus(true, true)
+    SetNuiFocusKeepInput(false)
+
+    CreateTablet()
+
+    SendNUIMessage({
+        action = 'staffOpen',
+        guilds = guilds,
+        viewType = Config.ViewType or 'tablet',
+        simplifiedSize = Config.SimplifiedSize
+    })
+end
+
+local function CloseStaffNUI()
+    if not isStaffOpen then return end
+
+    isStaffOpen = false
+
+    SetNuiFocus(false, false)
+    SetNuiFocusKeepInput(false)
+
+    RemoveTablet()
+
+    SendNUIMessage({ action = 'staffClose' })
+
+    TriggerServerEvent('guildbase:staff:close')
+
+    CreateThread(function()
+        Wait(100)
+        SetNuiFocus(false, false)
+        SetNuiFocusKeepInput(false)
+        ClearPedTasksImmediately(PlayerPedId())
+    end)
+end
+
+RegisterNetEvent('guildbase:staff:opened', function(guilds)
+    if not guilds or #guilds == 0 then
+        Notify(Config.Messages.staff_no_access, 'error')
+        return
+    end
+
+    DebugLog('staff', 'Staff panel opened with %d guild(s)', #guilds)
+
+    OpenStaffNUI(guilds)
+end)
+
+RegisterNetEvent('guildbase:staff:list', function(payload)
+    SendNUIMessage({ action = 'staffList', payload = payload })
+end)
+
+RegisterNetEvent('guildbase:staff:detail', function(payload)
+    SendNUIMessage({ action = 'staffDetail', payload = payload })
+end)
+
+RegisterNetEvent('guildbase:staff:actionResult', function(payload)
+    SendNUIMessage({ action = 'staffActionResult', payload = payload })
+end)
+
+RegisterNetEvent('guildbase:staff:error', function(message)
+    message = message or Config.Messages.staff_error
+
+    -- Before the panel is up there is nothing to show the message in, so it
+    -- goes to the usual notification instead.
+    if isStaffOpen then
+        SendNUIMessage({ action = 'staffError', message = message })
+    else
+        Notify(message, 'error')
+    end
+end)
+
+RegisterNUICallback('staffList', function(data, cb)
+    TriggerServerEvent('guildbase:staff:list', data.guildIndex, data.filters)
+    cb('ok')
+end)
+
+RegisterNUICallback('staffView', function(data, cb)
+    TriggerServerEvent('guildbase:staff:view', data.guildIndex, data.applicationId)
+    cb('ok')
+end)
+
+RegisterNUICallback('staffAction', function(data, cb)
+    TriggerServerEvent('guildbase:staff:action', data.guildIndex, data.applicationId, data.staffAction, data.payload)
+    cb('ok')
+end)
+
+RegisterNUICallback('staffClose', function(_, cb)
+    CloseStaffNUI()
+    cb('ok')
+end)
+
+CreateThread(function()
+    if not Config.StaffPanel or not Config.StaffPanel.enabled then return end
+
+    local command = Config.StaffPanel.command or 'apps'
+
+    RegisterCommand(command, function()
+        if isNUIOpen or isStaffOpen then return end
+
+        Notify(Config.Messages.staff_loading, 'info')
+        TriggerServerEvent('guildbase:staff:open')
+    end, false)
+
+    TriggerEvent('chat:addSuggestion', '/' .. command, Config.StaffPanel.suggestion or 'Review Guildbase applications')
 end)
 
 -- Spawn NPC
@@ -358,6 +479,7 @@ AddEventHandler('onResourceStop', function(resourceName)
 
     CleanupNPCs()
     CloseNUI()
+    CloseStaffNUI()
 end)
 
 -- Wait for player to be fully loaded then spawn NPCs

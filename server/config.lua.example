@@ -19,3 +19,23 @@ ServerConfig.APIKeys = {
     -- ['police_applications'] = 'gb_live_YOUR_API_KEY',
     -- ['ems_applications'] = 'gb_live_YOUR_API_KEY',
 }
+
+--[[
+    Staff Panel Keys (/apps)
+
+    One key per Guildbase guild your staff should be able to review
+    applications for. Each key needs the 'staff:review' scope ticked in
+    Guild Settings > API Keys -- it is not granted by default.
+
+    Staff with access to more than one of these guilds are asked which one
+    they want when they run /apps. Access is worked out per player from their
+    Guildbase role, so adding a key here does not give anybody permissions
+    they do not already have on the website.
+
+    Leave the table empty to reuse the keys from ServerConfig.APIKeys above.
+    Keys never leave the server.
+]]
+ServerConfig.StaffKeys = {
+    -- 'gb_live_YOUR_API_KEY',
+    -- 'gb_live_SECOND_GUILD_API_KEY',
+}
