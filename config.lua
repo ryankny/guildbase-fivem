@@ -13,6 +13,7 @@ Config.Debug = {
     logNPCSpawning = true,
     logTargetSetup = true,
     logStaffPanel = true,
+    logPhoneMail = true,
     redactSensitiveData = true
 }
 
@@ -146,6 +147,48 @@ Config.StaffPanel = {
 }
 
 --[[
+    In-Game Phone
+
+    Delivers application notifications to the player's in-game phone: a
+    confirmation when they submit, and the workflow stage's email -- the
+    wording the guild wrote in Guildbase -- when a staff member makes a
+    decision on it.
+
+    system:
+      'auto'     - use LB Phone if the resource is running, otherwise nothing
+      'lb-phone' - always use LB Phone
+      'none'     - never deliver phone mail
+
+    The player needs a phone with a mail account set up; anyone without one is
+    skipped and their mail waits (Guildbase holds it for 24 hours).
+
+    pollInterval is how often, in seconds, the server asks Guildbase whether
+    there is anything for the players currently online. Nothing is requested
+    at all while nobody online has a phone.
+]]
+Config.Phone = {
+    enabled = true,
+    system = 'auto',
+    pollInterval = 30,
+
+    -- Who the mail appears to be from. Leave nil to use the guild's name.
+    sender = nil
+}
+
+--[[
+    My Applications (/myapps)
+
+    Lets a player check the applications they have submitted to your guild and
+    withdraw one that has not been decided yet -- the same rule as the website:
+    only while it is still submitted or in review.
+]]
+Config.MyApplications = {
+    enabled = true,
+    command = 'myapps',
+    suggestion = 'View or withdraw your applications'
+}
+
+--[[
     Notification System
     Options: 'native', 'ox_lib', 'esx', 'qbcore'
 ]]
@@ -165,5 +208,10 @@ Config.Messages = {
     staff_not_configured = 'No Guildbase API keys are configured for the staff panel.',
     staff_no_access = 'You do not have access to any Guildbase guild.',
     staff_error = 'Could not reach Guildbase. Please try again.',
-    staff_cooldown = 'Slow down a moment.'
+    staff_cooldown = 'Slow down a moment.',
+
+    mine_loading = 'Loading your applications...',
+    mine_none = 'You have not submitted any applications.',
+    mine_disabled = 'This is disabled on this server.',
+    mine_error = 'Could not reach Guildbase. Please try again.'
 }
